@@ -4,6 +4,8 @@
 
 #include "bmp.h"
 
+#define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
+
 void exec_dither(char *image, int width, int height)
 {
 	char e;
@@ -54,7 +56,7 @@ int main(int argc, char *argv[])
 	struct bmpHeader input_bmp_header, y8_bmp_header;
 	struct bmpInfoHeader input_bmp_info, y8_bmp_info;
 	struct rgbQuadPalette palette;
-	int width, height;
+	int width, height, width_8bpp_bmp; /* 8bpp bitmap image width have to be aligned 4byte. */
 	int i, j;
 	int written_data_cnt;
 	short *input_curr_pix;
@@ -115,9 +117,12 @@ int main(int argc, char *argv[])
 	width = input_bmp_info.biWidth;
 	height = input_bmp_info.biHeight;
 
+	/* Calculate 8bpp bitmap width. */
+	width_8bpp_bmp = ALIGN(width, 4);
+
 	/* Calculate Y8 bmp filesize. */
 	y8_output_filesize = sizeof(struct bmpHeader) + sizeof(struct bmpInfoHeader) +
-		(sizeof(struct rgbQuadPalette) * NUM_PALETTE_8BPP) + (width * height);
+		(sizeof(struct rgbQuadPalette) * NUM_PALETTE_8BPP) + (width_8bpp_bmp * height);
 
 	/* Create Y8 bmp. */
 	/* Open Y8 bmp file for write mode. */
@@ -143,7 +148,7 @@ int main(int argc, char *argv[])
 
 	/* Setup bmpInfoHeader. */
 	y8_bmp_info.biSize = 40; /* Fixed value */
-	y8_bmp_info.biWidth = (short)width;
+	y8_bmp_info.biWidth = (short)width_8bpp_bmp;
 	y8_bmp_info.biHeight = (short)height;
 	y8_bmp_info.biPlanes = 1; /* Fixed value */
 	y8_bmp_info.biBitCount = 8; /* 8bits per pixel */
@@ -167,16 +172,16 @@ int main(int argc, char *argv[])
 			written_data_cnt += sizeof(struct rgbQuadPalette);
 		}
 	}
-	
+
 	/* Allocate y8_bmpbuf memory. */
-	if ((y8_bmpbuf = calloc(width * height, sizeof(char))) == NULL) {
+	if ((y8_bmpbuf = calloc(width_8bpp_bmp * height, sizeof(char))) == NULL) {
 		fprintf(stderr, "Memory allocation error.\n");
 		fclose(fp_y8);
 		free(input_bmpbuf);
 		exit(EXIT_FAILURE);
 	}
 
-	fprintf(stderr, "size : width=%d, height=%d.\n", width, height);
+	printf("size : width=%d, height=%d.\n", width, height);
 
 	/* Convert RGB565 to Y8 and store data in y8_bmpbuf. */
 	input_curr_pix = (short *)((char *)input_bmpbuf + OFFSET_BMP_DATA_16BPP);
@@ -190,11 +195,16 @@ int main(int argc, char *argv[])
 			input_curr_pix++;
 			y8_curr_pix++;
 		}
+		/* 8bpp bitmap image has to be 4byte aligned. */
+		for (j = 0; j < width_8bpp_bmp - width; j++) {
+			*y8_curr_pix = (char)0x00;
+			y8_curr_pix++;
+		}
 	}
 	free(input_bmpbuf);
 
 	/* Write pixel data. */
-	written_data_cnt += fwrite(y8_bmpbuf, sizeof(char), width * height, fp_y8);
+	written_data_cnt += fwrite(y8_bmpbuf, sizeof(char), width_8bpp_bmp * height, fp_y8);
 
 	/* Check written data size. */
 	if (written_data_cnt != y8_output_filesize) {
@@ -233,10 +243,10 @@ int main(int argc, char *argv[])
 	}
 
 	/* Dither processing. */
-	exec_dither(y8_bmpbuf, width, height);
+	exec_dither(y8_bmpbuf, width_8bpp_bmp, height);
 
 	/* Write pixel data. */
-	written_data_cnt += fwrite(y8_bmpbuf, sizeof(char), width * height, fp_dither);
+	written_data_cnt += fwrite(y8_bmpbuf, sizeof(char), width_8bpp_bmp * height, fp_dither);
 
 	/* Check written data size. */
 	if (written_data_cnt != y8_output_filesize) {
